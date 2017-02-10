@@ -55,7 +55,7 @@ open Typerr
    type annotation to convert [ty1] into the desired function type
    [TyArrow ty1 ty]. The sample file [test/good/conversion.f]
    illustrates this.
-   
+
    If you follow our suggestion and develop an incomplete
    type-checker, then you may run into a problem when implementing
    defunctionalization. The program produced by your
@@ -78,7 +78,44 @@ let rec infer              (* [infer] expects... *)
     : ftype =              (* ...and returns a type. *)
 
   match term with
-
+  | TeVar x -> lookup x tenv
+  (* | TeAbs of *)
+  (*     atom *                      (\* function parameter *\) *)
+  (*     ftype *                     (\* function parameter's type *\) *)
+  (*     fterm *                     (\* function body *\) *)
+  (*     function_info option ref    (\* information recorded by the type-checker *\) *)
+  | TeApp (f, e, app_info) ->
+    begin match infer p xenv loc hyps tenv f with
+      | TyArrow (t1, t2) ->
+        let () = check p xenv hyps tenv e t1 in
+        let () = app_info := Some { domain = t1 ; codomain = t2 } in
+        t2
+      | _ -> failwith "TODO: handle type errors"
+    end
+  | TeLet (x, e, b) ->
+    let t = infer p xenv loc hyps tenv e in
+    infer p xenv loc hyps (bind x t tenv) b
+  (* | TeFix of atom * ftype * fterm *)
+  (*     (\* fix x : T = t *\) *)
+  (* TODO: introduce new variable + equation ? *)
+  (* | TeTyAbs of atom * fterm *)
+  (*     (\* fun [ a ] = t *\) *)
+  (* TODO: what about type variables that are not free in tenv / hyps ? *)
+  | TeTyApp (e, t) ->
+    begin match infer p xenv loc hyps tenv e with
+      | TyForall tc -> fill tc t
+      | _ -> failwith "TODO:handle type errors"
+    end
+  (* | TeTyApp of fterm * ftype *)
+  (*     (\* t [ T ] *\) *)
+  (* | TeData of atom * ftype list * fterm list *)
+  (*     (\* K [ T ... T ] { t; ...; t } *\) *)
+  | TeTyAnnot (e, t) ->
+    let () = check p xenv hyps tenv e t in
+    t
+  (* | TeMatch of fterm * ftype * clause list *)
+  (*     (\* match t return T with clause ... clause end *\) *)
+  | TeLoc (_, e) -> infer p xenv loc hyps tenv e
   | _ ->
      failwith "TYPECHECKING IS NOT IMPLEMENTED YET!" (* do something here! *)
 
@@ -100,7 +137,7 @@ and check                  (* [check] expects... *)
   match term with
   | TeLoc (loc, term) ->
 
-      let inferred = infer p xenv loc hyps tenv term in
+      (* let inferred = infer p xenv loc hyps tenv term in *)
       failwith "CHECK IS NOT COMPLETE YET!" (* do something here! *)
 
   | _ ->
