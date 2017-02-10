@@ -1,0 +1,6 @@
+*.pdf
+_build/
+joujou
+main.native
+test/*/*.out
+test/*/log
