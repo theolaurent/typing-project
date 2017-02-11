@@ -66,6 +66,11 @@ open Typerr
 
 (* ------------------------------------------------------------------------- *)
 
+
+let decompose_scheme (ty : ftype) : atom list * equations * ftype list * atom * ftype list =
+  failwith "TODO"
+(* fun [ a1 ; .. an ] = *)
+
 (* The type-checker. *)
 
 let rec infer              (* [infer] expects... *)
@@ -79,11 +84,12 @@ let rec infer              (* [infer] expects... *)
 
   match term with
   | TeVar x -> lookup x tenv
-  (* | TeAbs of *)
-  (*     atom *                      (\* function parameter *\) *)
-  (*     ftype *                     (\* function parameter's type *\) *)
-  (*     fterm *                     (\* function body *\) *)
-  (*     function_info option ref    (\* information recorded by the type-checker *\) *)
+  | TeAbs (x, t, b, fun_info) ->
+    let t' = infer p xenv loc hyps (bind x t tenv) b in
+    (* TODO: I do not restrict tenv, is it inefficient? *)
+    let res = TyArrow (t, t') in
+    let () = fun_info := Some { hyps = hyps ; tenv = tenv ; fty = res } in
+    res
   | TeApp (f, e, app_info) ->
     begin match infer p xenv loc hyps tenv f with
       | TyArrow (t1, t2) ->
@@ -95,29 +101,29 @@ let rec infer              (* [infer] expects... *)
   | TeLet (x, e, b) ->
     let t = infer p xenv loc hyps tenv e in
     infer p xenv loc hyps (bind x t tenv) b
-  (* | TeFix of atom * ftype * fterm *)
-  (*     (\* fix x : T = t *\) *)
-  (* TODO: introduce new variable + equation ? *)
-  (* | TeTyAbs of atom * fterm *)
-  (*     (\* fun [ a ] = t *\) *)
-  (* TODO: what about type variables that are not free in tenv / hyps ? *)
+  | TeFix (x, t, b) ->
+    let () = check p xenv hyps (bind x t tenv) b t in
+    t
+  | TeTyAbs (a, e) ->
+    (* TODO: may we assume that a is free in tenv and hyps?? *)
+    let t = infer p xenv loc hyps tenv e in
+    TyForall (abstract a t)
   | TeTyApp (e, t) ->
     begin match infer p xenv loc hyps tenv e with
       | TyForall tc -> fill tc t
-      | _ -> failwith "TODO:handle type errors"
+      | _ -> failwith "TODO: handle type errors"
     end
-  (* | TeTyApp of fterm * ftype *)
-  (*     (\* t [ T ] *\) *)
-  (* | TeData of atom * ftype list * fterm list *)
-  (*     (\* K [ T ... T ] { t; ...; t } *\) *)
+  | TeData (k, tys, terms) ->
+    begin match type_scheme p k with
+        _ -> failwith "TODO: what is the shape of type schemes?"
+    end
   | TeTyAnnot (e, t) ->
     let () = check p xenv hyps tenv e t in
     t
+  | TeMatch _ -> failwith "TODO: implement pattern matching"
   (* | TeMatch of fterm * ftype * clause list *)
   (*     (\* match t return T with clause ... clause end *\) *)
-  | TeLoc (_, e) -> infer p xenv loc hyps tenv e
-  | _ ->
-     failwith "TYPECHECKING IS NOT IMPLEMENTED YET!" (* do something here! *)
+  | TeLoc (newl, e) -> infer p xenv newl hyps tenv e
 
 and check                  (* [check] expects... *)
     (p : program)          (* a program, which provides information about type & data constructors; *)
@@ -136,9 +142,10 @@ and check                  (* [check] expects... *)
 
   match term with
   | TeLoc (loc, term) ->
-
-      (* let inferred = infer p xenv loc hyps tenv term in *)
-      failwith "CHECK IS NOT COMPLETE YET!" (* do something here! *)
+      let inferred = infer p xenv loc hyps tenv term in
+      (* TODO: what about equations compatibility? *)
+      if not (equal inferred expected) then
+        failwith "TODO: handle type errors"
 
   | _ ->
       (* out of luck! *)
