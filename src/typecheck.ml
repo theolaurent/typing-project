@@ -121,12 +121,24 @@ let rec infer              (* [infer] expects... *)
       | _ -> failwith "TODO: handle type errors"
     end
   | TeData (k, tys, terms) ->
-    let () = try
-        List.fold_left2 (fun () t e -> check p xenv hyps tenv e t) () tys terms
-      with Invalid_argument _ -> failwith "TODO: handle type errors"
+    (* Instantiate the type scheme with the concrete types given as *)
+    (* arguments to the type constructor                            *)
+    let instanciated = List.fold_left (fun tsch t -> match tsch with
+        | TyForall tc -> fill tc t
+        | _ -> failwith "TODO: handle type errors"
+      ) (type_scheme p k) tys
     in
-    begin match type_scheme p k with
-        _ -> failwith "TODO: what is the shape of type schemes?"
+    (* Extract (head) equations and test them against the hypotheses *)
+    let rec elim_equations (ty : ftype) (acc : equations) : ftype =
+      match ty with
+      | TyWhere (t, l, r) -> elim_equations t ((l, r) :: acc)
+      | _ -> let () = failwith "TODO: check equations" in
+        ty
+    in
+    (* Check the type of the tuple *)
+    begin match elim_equations instanciated [] with
+      | TyArrow (TyTuple tl, tres) -> failwith "TODO"
+      | _ -> failwith "TODO: handle type errors"
     end
   | TeTyAnnot (e, t) ->
     let () = check p xenv hyps tenv e t in
