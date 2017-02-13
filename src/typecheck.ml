@@ -66,16 +66,6 @@ open Typerr
 
 (* ------------------------------------------------------------------------- *)
 
-
-(* let decompose_scheme (ty : ftype) : atom list * equations * ftype list * atom * ftype list = *)
-
-
-(*   let rec headforalls (ty : ftype) (acc : atom list) : atom list * ftype = match ty with *)
-(*     (\* TODO: tailrec? *\) *)
-(*     | TyForall tc -> let a = fresh "" headforalls () *)
-(*     | _ -> (acc, ty) *)
-(* (\* fun [ a1 ; .. an ] = ({ T1 ; .. Tn } -> T) where [...] *\) *)
-
 (* The type-checker. *)
 
 let rec infer              (* [infer] expects... *)
@@ -132,12 +122,15 @@ let rec infer              (* [infer] expects... *)
     let rec elim_equations (ty : ftype) (acc : equations) : ftype =
       match ty with
       | TyWhere (t, l, r) -> elim_equations t ((l, r) :: acc)
-      | _ -> let () = failwith "TODO: check equations" in
-        ty
+      | _ -> if entailment hyps acc then ty
+             else failwith "TODO: handle type errors"
     in
     (* Check the type of the tuple *)
     begin match elim_equations instanciated [] with
-      | TyArrow (TyTuple tl, tres) -> failwith "TODO"
+      | TyArrow (TyTuple tl, tres) ->
+        let () = try List.fold_left2 (fun () t e -> check p xenv hyps tenv e t) () tl terms
+        with Invalid_argument _ -> failwith "TODO: handle type errors"
+        in tres
       | _ -> failwith "TODO: handle type errors"
     end
   | TeTyAnnot (e, t) ->
