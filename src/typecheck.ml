@@ -67,9 +67,14 @@ open Typerr
 (* ------------------------------------------------------------------------- *)
 
 
-let decompose_scheme (ty : ftype) : atom list * equations * ftype list * atom * ftype list =
-  failwith "TODO"
-(* fun [ a1 ; .. an ] = *)
+(* let decompose_scheme (ty : ftype) : atom list * equations * ftype list * atom * ftype list = *)
+
+
+(*   let rec headforalls (ty : ftype) (acc : atom list) : atom list * ftype = match ty with *)
+(*     (\* TODO: tailrec? *\) *)
+(*     | TyForall tc -> let a = fresh "" headforalls () *)
+(*     | _ -> (acc, ty) *)
+(* (\* fun [ a1 ; .. an ] = ({ T1 ; .. Tn } -> T) where [...] *\) *)
 
 (* The type-checker. *)
 
@@ -83,6 +88,7 @@ let rec infer              (* [infer] expects... *)
     : ftype =              (* ...and returns a type. *)
 
   match term with
+  (* TODO: add comments *)
   | TeVar x -> lookup x tenv
   | TeAbs (x, t, b, fun_info) ->
     let t' = infer p xenv loc hyps (bind x t tenv) b in
@@ -105,7 +111,8 @@ let rec infer              (* [infer] expects... *)
     let () = check p xenv hyps (bind x t tenv) b t in
     t
   | TeTyAbs (a, e) ->
-    (* TODO: may we assume that a is free in tenv and hyps?? *)
+    (* thanks to the internalization mechanism, we may we assume that *)
+    (* a is free in tenv and hyps                                     *)
     let t = infer p xenv loc hyps tenv e in
     TyForall (abstract a t)
   | TeTyApp (e, t) ->
@@ -114,6 +121,10 @@ let rec infer              (* [infer] expects... *)
       | _ -> failwith "TODO: handle type errors"
     end
   | TeData (k, tys, terms) ->
+    let () = try
+        List.fold_left2 (fun () t e -> check p xenv hyps tenv e t) () tys terms
+      with Invalid_argument _ -> failwith "TODO: handle type errors"
+    in
     begin match type_scheme p k with
         _ -> failwith "TODO: what is the shape of type schemes?"
     end
