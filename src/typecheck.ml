@@ -66,6 +66,23 @@ open Typerr
 
 (* ------------------------------------------------------------------------- *)
 
+
+(* TODO: move the following functions to the appropriate file? *)
+
+(* Instantiate a type scheme with a list of types *)
+(* TODO: fold_left or fold_right? Test with lists! *)
+let instanciate scheme ty_list = List.fold_left (fun tsch t -> match tsch with
+    | TyForall tc -> fill tc t
+    | _ -> failwith "TODO: handle type errors"
+  ) scheme ty_list
+
+(* Extract the equations in head position *)
+let head_equations (ty : ftype) : equations * ftype =
+  let rec loop ty acc = match ty with
+    | TyWhere (t, l, r) -> loop t ((l,r) :: acc)
+    | _ -> (acc, ty)
+  in loop ty []
+
 (* The type-checker. *)
 
 let rec infer              (* [infer] expects... *)
@@ -111,35 +128,49 @@ let rec infer              (* [infer] expects... *)
       | _ -> failwith "TODO: handle type errors"
     end
   | TeData (k, tys, terms) ->
-    (* Instantiate the type scheme with the concrete types given as *)
-    (* arguments to the type constructor                            *)
-    let instanciated = List.fold_left (fun tsch t -> match tsch with
-        | TyForall tc -> fill tc t
-        | _ -> failwith "TODO: handle type errors"
-      ) (type_scheme p k) tys
-    in
-    (* Extract (head) equations and test them against the hypotheses *)
-    let rec elim_equations (ty : ftype) (acc : equations) : ftype =
-      match ty with
-      | TyWhere (t, l, r) -> elim_equations t ((l, r) :: acc)
-      | _ -> if entailment hyps acc then ty
-             else failwith "TODO: handle type errors"
-    in
-    (* Check the type of the tuple *)
-    begin match elim_equations instanciated [] with
-      | TyArrow (TyTuple tl, tres) ->
+    (* Instantiate the type scheme and extract equations *)
+    let (equs, t) = head_equations (instanciate (type_scheme p k) tys) in
+    let () = if not (entailment hyps equs) then failwith "TODO: handle type errors" in
+    (* Check the type of constructor itself *)
+    begin match t with
+      | TyArrow (TyTuple tl, (TyCon (tk, _) as tres)) ->
         let () = try List.fold_left2 (fun () t e -> check p xenv hyps tenv e t) () tl terms
-        with Invalid_argument _ -> failwith "TODO: handle type errors"
-        in tres
+          with Invalid_argument _ -> failwith "TODO: handle type errors" in
+        let () = if not (Atom.equal (type_constructor p k) tk)
+                 then failwith "TODO: handle type errors" in
+        tres
       | _ -> failwith "TODO: handle type errors"
     end
   | TeTyAnnot (e, t) ->
     let () = check p xenv hyps tenv e t in
     t
-  | TeMatch _ -> failwith "TODO: implement pattern matching"
-  (* | TeMatch of fterm * ftype * clause list *)
-  (*     (\* match t return T with clause ... clause end *\) *)
-  | TeLoc (newl, e) -> infer p xenv newl hyps tenv e
+  | TeMatch (e, rt, clauses) ->
+    begin match infer p xenv loc hyps tenv e with
+      | TyCon (tk, tys) ->
+        (* An auxiliary function to type check the clause *)
+        let check_clause (Clause (PatData (newloc, k, al, xl), e)) =
+          let (equs, t) = head_equations (instanciate (type_scheme p k) (List.map (fun a -> TyFreeVar a) al)) in
+          begin match t with
+            | TyArrow (TyTuple tl, TyCon (tk', tys')) ->
+              let nhyps = try
+                  List.rev_append hyps (List.rev_append equs (List.combine tys tys'))
+                with Invalid_argument _ -> failwith "TODO: handle type errors"
+              in
+              let () = if inconsistent nhyps then failwith "TODO: handle type errors" in
+              let () = if not (Atom.equal tk tk') then failwith "TODO: handle type errors" in
+              let ntenv = try binds (List.combine xl tl) tenv
+                with Invalid_argument _ -> failwith "TODO: handle type errors"
+              in
+              check p xenv nhyps ntenv e rt
+            | _ -> failwith "TODO: handle type errors"
+          end
+        in
+        (* Check all the clauses and return the provided return type *)
+        let () = List.fold_left (fun () c -> check_clause c) () clauses in
+        rt
+      | _ -> failwith "TODO: handle type errors"
+    end
+  | TeLoc (newloc, e) -> infer p xenv newloc hyps tenv e
 
 and check                  (* [check] expects... *)
     (p : program)          (* a program, which provides information about type & data constructors; *)
