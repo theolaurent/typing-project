@@ -13,7 +13,6 @@ open Typerr
 
 (* The core of the typechecker is made up of two mutually recursive
    functions. [infer] infers a type and returns it; [check] infers a
-   type, checks that it is equal to the expected type, and returns
    nothing. *)
 
 (* The type [ty] that is produced by [infer] should be correct, that
@@ -71,9 +70,9 @@ open Typerr
 
 (* Instantiate a type scheme with a list of types *)
 (* TODO: fold_left or fold_right? Test with lists! *)
-let instanciate scheme ty_list = List.fold_left (fun tsch t -> match tsch with
+let instanciate xenv loc scheme ty_list = List.fold_left (fun tsch t -> match tsch with
     | TyForall tc -> fill tc t
-    | _ -> failwith "TODO: handle type errors"
+    | _ -> expected_form xenv loc "forall _ . _" t
   ) scheme ty_list
 
 (* Extract the equations in head position *)
@@ -95,81 +94,80 @@ let rec infer              (* [infer] expects... *)
     : ftype =              (* ...and returns a type. *)
 
   match term with
-  (* TODO: add comments *)
+  (* x *)
   | TeVar x -> lookup x tenv
-  | TeAbs (x, t, b, fun_info) ->
-    let t' = infer p xenv loc hyps (bind x t tenv) b in
-    (* TODO: I do not restrict tenv, is it inefficient? *)
-    let res = TyArrow (t, t') in
+  (* fun x : t1 = e *)
+  | TeAbs (x, t1, e, fun_info) ->
+    (* infer return type *)
+    let t2 = infer p xenv loc hyps (bind x t1 tenv) e in
+    let res = TyArrow (t1, t2) in
     let () = fun_info := Some { hyps = hyps ; tenv = tenv ; fty = res } in
     res
+  (* f e *)
   | TeApp (f, e, app_info) ->
+    (* match the applied type against the arrow pattern *)
     begin match infer p xenv loc hyps tenv f with
       | TyArrow (t1, t2) ->
+        (* and check the argument type *)
         let () = check p xenv hyps tenv e t1 in
         let () = app_info := Some { domain = t1 ; codomain = t2 } in
         t2
-      | _ -> failwith "TODO: handle type errors"
+      | t -> expected_form xenv loc "_ -> _" t
     end
-  | TeLet (x, e, b) ->
-    let t = infer p xenv loc hyps tenv e in
-    infer p xenv loc hyps (bind x t tenv) b
-  | TeFix (x, t, b) ->
-    let () = check p xenv hyps (bind x t tenv) b t in
+  (* let x = e1 in e2 *)
+  | TeLet (x, e1, e2) ->
+    (* infer type of the bound expression *)
+    let t1 = infer p xenv loc hyps tenv e1 in
+    (* and add it to the environment to infer the body type *)
+    infer p xenv loc hyps (bind x t1 tenv) e2
+  (* fix x : t = e *)
+  | TeFix (x, t, e) ->
+    (* check the type of the fixpoint, adding itself to the environment *)
+    let () = check p xenv hyps (bind x t tenv) e t in
     t
-  | TeTyAbs (a, e) ->
+  (* fun [ alpha ] = e *)
+  | TeTyAbs (alpha, e) ->
     (* thanks to the internalization mechanism, we may we assume that *)
-    (* a is free in tenv and hyps                                     *)
+    (* a is free in tenv and hyps, TODO: may we?                      *)
+    (* infer the type of the body and abstract the type variable *)
     let t = infer p xenv loc hyps tenv e in
-    TyForall (abstract a t)
+    TyForall (abstract alpha t)
+  (* e [ t ] *)
   | TeTyApp (e, t) ->
+    (* match the expression type against the forall pattern *)
     begin match infer p xenv loc hyps tenv e with
       | TyForall tc -> fill tc t
-      | _ -> failwith "TODO: handle type errors"
+      | t -> expected_form xenv loc "forall _ . _" t
     end
+  (* k [ ty ... ty ] { term; ...; term } *)
   | TeData (k, tys, terms) ->
-    (* Instantiate the type scheme and extract equations *)
-    let (equs, t) = head_equations (instanciate (type_scheme p k) tys) in
-    let () = if not (entailment hyps equs) then failwith "TODO: handle type errors" in
-    (* Check the type of constructor itself *)
+    (* instantiate the type scheme and extract equations *)
+    let (equs, t) = head_equations (instanciate xenv loc (type_scheme p k) tys) in
+    let () = if not (entailment hyps equs)
+             then failwith "TODO: handle equation errors in the case of data constructors" in
+    (* match the type of the constructor itself *)
     begin match t with
-      | TyArrow (TyTuple tl, (TyCon (tk, _) as tres)) ->
-        let () = try List.fold_left2 (fun () t e -> check p xenv hyps tenv e t) () tl terms
-          with Invalid_argument _ -> failwith "TODO: handle type errors" in
+      | TyArrow (TyTuple arg_tys, (TyCon (tk, _) as tres)) ->
+        (* check for the arguments to have the right types *)
+        let () = try List.fold_left2 (fun () t e -> check p xenv hyps tenv e t) () arg_tys terms
+          with Invalid_argument _ -> failwith "TODO: handle arity mismatch in the case of data constructors"in
+        (* and check the constructor *)
         let () = if not (Atom.equal (type_constructor p k) tk)
-                 then failwith "TODO: handle type errors" in
+                 then failwith "TODO: handle constructor mismatch" in
         tres
-      | _ -> failwith "TODO: handle type errors"
+      | t -> expected_form xenv loc "{ _ ; ... _ } -> k _ ... _" t
     end
+  (* (e : t) *)
   | TeTyAnnot (e, t) ->
     let () = check p xenv hyps tenv e t in
     t
-  | TeMatch (e, rt, clauses) ->
-    begin match infer p xenv loc hyps tenv e with
-      | TyCon (tk, tys) ->
-        (* An auxiliary function to type check the clause *)
-        let check_clause (Clause (PatData (newloc, k, al, xl), e)) =
-          let (equs, t) = head_equations (instanciate (type_scheme p k) (List.map (fun a -> TyFreeVar a) al)) in
-          begin match t with
-            | TyArrow (TyTuple tl, TyCon (tk', tys')) ->
-              let nhyps = try
-                  List.rev_append hyps (List.rev_append equs (List.combine tys tys'))
-                with Invalid_argument _ -> failwith "TODO: handle type errors"
-              in
-              let () = if inconsistent nhyps then failwith "TODO: handle type errors" in
-              let () = if not (Atom.equal tk tk') then failwith "TODO: handle type errors" in
-              let ntenv = try binds (List.combine xl tl) tenv
-                with Invalid_argument _ -> failwith "TODO: handle type errors"
-              in
-              check p xenv nhyps ntenv e rt
-            | _ -> failwith "TODO: handle type errors"
-          end
-        in
-        (* Check all the clauses and return the provided return type *)
-        let () = List.fold_left (fun () c -> check_clause c) () clauses in
-        rt
-      | _ -> failwith "TODO: handle type errors"
-    end
+  (* match e return t2 with clause ... clause end *)
+  | TeMatch (e, t2, clauses) ->
+    (* infer the type of the expression and check each clause *)
+    let t1 = infer p xenv loc hyps tenv e in
+    let () = List.fold_left (fun () c -> check_clause p xenv hyps tenv c t1 t2) () clauses in
+    t2
+  (* e *)
   | TeLoc (newloc, e) -> infer p xenv newloc hyps tenv e
 
 and check                  (* [check] expects... *)
@@ -190,13 +188,47 @@ and check                  (* [check] expects... *)
   match term with
   | TeLoc (loc, term) ->
       let inferred = infer p xenv loc hyps tenv term in
-      (* TODO: what about equations compatibility? *)
-      if not (equal inferred expected) then
-        failwith "TODO: handle type errors"
+      if not (entailment hyps [(inferred, expected)]) then
+        mismatch xenv loc hyps expected inferred
 
   | _ ->
       (* out of luck! *)
       assert false
+
+and check_clause          (* [check_clause] expects... *)
+    (p      : program)    (* a program, which provides information about type & data constructors; *)
+    (xenv   : Export.env) (* a pretty-printer environment, for printing types; *)
+    (hyps   : equations)  (* a set of equality assumptions *)
+    (tenv   : tenv)       (* a typing environment; *)
+    (clause : clause)     (* a clause; *)
+    (arg    : ftype)      (* an argument type; *)
+    (ret    : ftype)      (* an return type; *)
+    : unit =              (* ...and returns nothing. *)
+
+  (* k [ alpha ... alpha ] { id; ...; id } -> e *)
+  let (Clause (PatData (loc, k, alphas, ids), e)) = clause in
+  match arg with
+  | TyCon (tk, t2s) ->
+    let (equs, t) = head_equations (instanciate xenv loc (type_scheme p k)
+                                   (List.map (fun a -> TyFreeVar a) alphas)) in
+                                   (* (List.map (fun a -> TyFreeVar (fresha a)) alphas)) in *)
+                                   (* TODO: the fresha should not be necessary, cf internalization *)
+    begin match t with
+      | TyArrow (TyTuple ts, TyCon (tk', t1s)) ->
+        let () = if not (Atom.equal tk tk')
+                 then failwith "TODO: handle type constructor mismatch in the case of clauses" in
+        let nhyps = try
+            List.rev_append hyps (List.rev_append equs (List.combine t1s t2s))
+          with Invalid_argument _ -> failwith "TODO: handle arity mismatch in the case of clauses (1)"
+        in
+        let () = if inconsistent nhyps then failwith "TODO: handle inconsistent clauses" in
+        let ntenv = try binds (List.combine ids ts) tenv
+          with Invalid_argument _ -> failwith "TODO: handle arity mismatch in the case of clauses (2)"
+        in
+        check p xenv nhyps ntenv e ret
+      | t -> expected_form xenv loc "{ _ ; ... _ } -> k _ ... _" t
+    end
+  | t -> expected_form xenv loc "k _ ... _" t
 
 (* ------------------------------------------------------------------------- *)
 
