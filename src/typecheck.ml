@@ -69,7 +69,6 @@ open Typerr
 (* TODO: move the following functions to the appropriate file? *)
 
 (* Instantiate a type scheme with a list of types *)
-(* TODO: fold_left or fold_right? Test with lists! *)
 let instanciate xenv loc scheme ty_list = List.fold_left (fun tsch t -> match tsch with
     | TyForall tc -> fill tc t
     | _ -> expected_form xenv loc "forall _ . _" t
@@ -129,7 +128,7 @@ let rec infer              (* [infer] expects... *)
   (* fun [ alpha ] = e *)
   | TeTyAbs (alpha, e) ->
     (* thanks to the internalization mechanism, we may we assume that *)
-    (* a is free in tenv and hyps, TODO: may we?                      *)
+    (* a is free in tenv and hyps.                                    *)
     (* infer the type of the body and abstract the type variable *)
     let t = infer p xenv loc hyps tenv e in
     TyForall (abstract alpha t)
@@ -138,23 +137,26 @@ let rec infer              (* [infer] expects... *)
     (* match the expression type against the forall pattern *)
     begin match infer p xenv loc hyps tenv e with
       | TyForall tc -> fill tc t
-      | t -> expected_form xenv loc "forall _ . _" t
+      | t ->
+        (* Assert failure ?? *)
+        (* expected_form xenv loc "forall _ . _" t *)
+        Error.error [loc] "Type mismatch. Expecting universal"
     end
   (* k [ ty ... ty ] { term; ...; term } *)
   | TeData (k, tys, terms) ->
     (* instantiate the type scheme and extract equations *)
     let (equs, t) = head_equations (instanciate xenv loc (type_scheme p k) tys) in
     let () = if not (entailment hyps equs)
-             then failwith "TODO: handle equation errors in the case of data constructors" in
+             then Error.error [loc] "TODO: handle equation errors in the case of data constructors" in
     (* match the type of the constructor itself *)
     begin match t with
       | TyArrow (TyTuple arg_tys, (TyCon (tk, _) as tres)) ->
         (* check for the arguments to have the right types *)
         let () = try List.iter2 (fun t e -> check p xenv hyps tenv e t) arg_tys terms
-          with Invalid_argument _ -> failwith "TODO: handle arity mismatch in the case of data constructors"in
+          with Invalid_argument _ -> Error.error [loc] "TODO: handle arity mismatch in the case of data constructors"in
         (* and check the constructor *)
         let () = if not (Atom.equal (type_constructor p k) tk)
-                 then failwith "TODO: handle constructor mismatch" in
+                 then Error.error [loc] "TODO: handle constructor mismatch" in
         tres
       | t -> expected_form xenv loc "{ _ ; ... _ } -> k _ ... _" t
     end
@@ -173,9 +175,11 @@ let rec infer              (* [infer] expects... *)
             match List.filter (fun (Clause (PatData (_, k, _, _), _)) -> Atom.equal a k) clauses with
             | [] ->
               (* check_inconsisten_clause *)
-              if not (check_inconsistent p xenv loc hyps a t1) then failwith "TODO: handle missing clauses"
+              if not (check_inconsistent p xenv loc hyps a t1)
+              then missing_clause xenv hyps loc a
             | [ c ] -> ()
-            | c1 :: c2 :: _ -> failwith "TODO: handle redundant_clauses"
+            | _ :: c2 :: _ -> let (Clause (PatData (loc, _, _, _), _)) = c2 in
+              redundant_clause loc
           ) (data_constructors p tk) in
         let () = List.iter (fun c -> check_clause p xenv hyps tenv c t1 t2) clauses in
         t2
@@ -203,7 +207,9 @@ and check                  (* [check] expects... *)
   | TeLoc (loc, term) ->
       let inferred = infer p xenv loc hyps tenv term in
       if not (entailment hyps [(inferred, expected)]) then
-        mismatch xenv loc hyps expected inferred
+        (* Assert failure ?? *)
+        (* mismatch xenv loc hyps expected inferred *)
+        Error.error [loc] "Type mismatch."
 
   | _ ->
       (* out of luck! *)
@@ -230,14 +236,14 @@ and check_clause          (* [check_clause] expects... *)
     begin match t with
       | TyArrow (TyTuple ts, TyCon (tk', t1s)) ->
         let () = if not (Atom.equal tk tk')
-                 then failwith "TODO: handle type constructor mismatch in the case of clauses" in
+                 then typecon_mismatch xenv loc k tk tk' in
         let nhyps = try
             List.rev_append hyps (List.rev_append equs (List.combine t1s t2s))
-          with Invalid_argument _ -> failwith "TODO: handle arity mismatch in the case of clauses (1)"
+          with Invalid_argument _ -> Error.error [loc] "TODO: handle arity mismatch in the case of clauses (1)"
         in
-        let () = if inconsistent nhyps then failwith "TODO: handle inconsistent clauses" in
+        let () = if inconsistent nhyps then inaccessible_clause loc in
         let ntenv = try binds (List.combine ids ts) tenv
-          with Invalid_argument _ -> failwith "TODO: handle arity mismatch in the case of clauses (2)"
+          with Invalid_argument _ -> Error.error [loc] "TODO: handle arity mismatch in the case of clauses (2)"
         in
         check p xenv nhyps ntenv e ret
       | t -> expected_form xenv loc "{ _ ; ... _ } -> k _ ... _" t
