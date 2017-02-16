@@ -232,8 +232,6 @@ and check_clause          (* [check_clause] expects... *)
   | TyCon (tk, t2s) ->
     let (equs, t) = head_equations (instanciate xenv loc (type_scheme p k)
                                    (List.map (fun a -> TyFreeVar a) alphas)) in
-                                   (* (List.map (fun a -> TyFreeVar (fresha a)) alphas)) in *)
-                                   (* TODO: the fresha should not be necessary, cf internalization *)
     begin match t with
       | TyArrow (TyTuple ts, TyCon (tk', t1s)) ->
         let () = if not (Atom.equal tk tk')
@@ -270,8 +268,6 @@ and check_inconsistent    (* [check_clause] expects... *)
     in
     let (equs, t) = head_equations (instanciate xenv loc tsch
                                    (List.map (fun a -> TyFreeVar a) freshes)) in
-                                   (* (List.map (fun a -> TyFreeVar (fresha a)) alphas)) in *)
-                                   (* TODO: the fresha should not be necessary, cf internalization *)
     begin match t with
       | TyArrow (TyTuple ts, TyCon (tk', t1s)) ->
         let () = if not (Atom.equal tk tk')
