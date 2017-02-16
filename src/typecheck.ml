@@ -153,7 +153,8 @@ let rec infer              (* [infer] expects... *)
       | TyArrow (TyTuple arg_tys, (TyCon (tk, _) as tres)) ->
         (* check for the arguments to have the right types *)
         let () = try List.iter2 (fun t e -> check p xenv hyps tenv e t) arg_tys terms
-          with Invalid_argument _ -> Error.error [loc] "TODO: handle arity mismatch in the case of data constructors"in
+          with Invalid_argument _ ->
+            Error.error [loc] "TODO: handle arity mismatch in the case of data constructors"in
         (* and check the constructor *)
         let () = if not (Atom.equal (type_constructor p k) tk)
                  then Error.error [loc] "TODO: handle constructor mismatch" in
