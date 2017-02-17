@@ -30,6 +30,14 @@ let unsatisfied_equation xenv loc hyps lhs rhs =
     (print_hypotheses xenv hyps)
   )
 
+let unsatisfied_equations xenv loc hyps equs =
+  Error.error [loc] (sprintf
+    "These type equations should but do not hold:\n%s%s"
+    (print_equations xenv equs)
+    (print_hypotheses xenv hyps)
+  )
+
+
 let expected_form xenv loc form ty =
   Error.error [loc] (sprintf
     "Type mismatch: I expected %s type.\nInferred: %s\n"
@@ -92,4 +100,3 @@ let deconstruct_tycon xenv loc : ftype -> Atom.atom =
 	tc
     | ty ->
 	expected_form xenv loc "an algebraic data" ty
-

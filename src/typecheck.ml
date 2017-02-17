@@ -67,6 +67,7 @@ open Typerr
 
 
 (* TODO: move the following functions to the appropriate file? *)
+(* TODO: update xenv when necessary and handle errors properly? *)
 
 (* Instantiate a type scheme with a list of types *)
 let instanciate xenv loc scheme ty_list = List.fold_left (fun tsch t -> match tsch with
@@ -130,7 +131,7 @@ let rec infer              (* [infer] expects... *)
     (* thanks to the internalization mechanism, we may we assume that *)
     (* a is free in tenv and hyps.                                    *)
     (* infer the type of the body and abstract the type variable *)
-    let t = infer p xenv loc hyps tenv e in
+    let t = infer p (Export.bind xenv alpha) loc hyps tenv e in
     TyForall (abstract alpha t)
   (* e [ t ] *)
   | TeTyApp (e, t) ->
@@ -138,16 +139,14 @@ let rec infer              (* [infer] expects... *)
     begin match infer p xenv loc hyps tenv e with
       | TyForall tc -> fill tc t
       | t ->
-        (* Assert failure ?? *)
-        (* expected_form xenv loc "forall _ . _" t *)
-        Error.error [loc] "Type mismatch. Expecting universal"
+        expected_form xenv loc "forall _ . _" t
     end
   (* k [ ty ... ty ] { term; ...; term } *)
   | TeData (k, tys, terms) ->
     (* instantiate the type scheme and extract equations *)
     let (equs, t) = head_equations (instanciate xenv loc (type_scheme p k) tys) in
     let () = if not (entailment hyps equs)
-             then Error.error [loc] "TODO: handle equation errors in the case of data constructors" in
+             then unsatisfied_equations xenv loc hyps equs in
     (* match the type of the constructor itself *)
     begin match t with
       | TyArrow (TyTuple arg_tys, (TyCon (tk, _) as tres)) ->
@@ -208,10 +207,8 @@ and check                  (* [check] expects... *)
   | TeLoc (loc, term) ->
       let inferred = infer p xenv loc hyps tenv term in
       if not (entailment hyps [(inferred, expected)]) then
-        (* Assert failure ?? *)
-        (* mismatch xenv loc hyps expected inferred *)
-        Error.error [loc] "Type mismatch."
-
+        mismatch xenv loc hyps expected inferred
+        (* TODO: is "unsatisfied_equation xenv loc hyps inferred expected" better?*)
   | _ ->
       (* out of luck! *)
       assert false
@@ -244,7 +241,7 @@ and check_clause          (* [check_clause] expects... *)
         let ntenv = try binds (List.combine ids ts) tenv
           with Invalid_argument _ -> Error.error [loc] "TODO: handle arity mismatch in the case of clauses (2)"
         in
-        check p xenv nhyps ntenv e ret
+        check p (Export.sbind xenv alphas) nhyps ntenv e ret
       | t -> expected_form xenv loc "{ _ ; ... _ } -> k _ ... _" t
     end
   | t -> expected_form xenv loc "k _ ... _" t
