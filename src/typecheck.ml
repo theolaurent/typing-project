@@ -268,10 +268,10 @@ and check_inconsistent    (* [check_clause] expects... *)
     begin match t with
       | TyArrow (TyTuple ts, TyCon (tk', t1s)) ->
         let () = if not (Atom.equal tk tk')
-                 then failwith "TODO: handle type constructor mismatch in the case of clauses" in
+                 then Error.error [loc] "TODO: handle type constructor mismatch in the case of clauses" in
         let nhyps = try
             List.rev_append hyps (List.rev_append equs (List.combine t1s t2s))
-          with Invalid_argument _ -> failwith "TODO: handle arity mismatch in the case of clauses (1)"
+          with Invalid_argument _ -> Error.error [loc] "TODO: handle arity mismatch in the case of clauses (1)"
         in
         inconsistent nhyps
       | t -> expected_form xenv loc "{ _ ; ... _ } -> k _ ... _" t
