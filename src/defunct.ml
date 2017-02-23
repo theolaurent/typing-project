@@ -53,7 +53,6 @@ let rec translate_typescheme (ty : ftype) : ftype = match ty with
   | TyWhere (t, l, r) -> TyWhere (translate_typescheme t, translate_type l, translate_type r)
   | TyArrow (TyTuple args, TyCon (tk, results)) ->
     TyArrow (TyTuple (List.map translate_type args), TyCon (tk, List.map translate_type results))
-  | TyCon (tk, results) -> TyCon (tk, List.map translate_type results)
   | _ -> failwith "This is not a type scheme"
 
 (* a type for the apply function *)
