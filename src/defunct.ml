@@ -108,7 +108,7 @@ let translate (Prog (t_table, dc_table, term) : program) =
       (* create a fresh id for the lambda *)
       let m : atom = fresh (Identifier.mk "M" (3, "data constructor")) in
       (* compute free term variables and their types *)
-      let free_vars = AtomSet.fold (fun h t -> h :: t) (fv t) [] in
+      let free_vars = AtomSet.elements (fv t) in
       let free_vars_types = List.map (fun a -> lookup a tenv) free_vars in
       (* compute all free type variables *)
       let free_type_vars =
@@ -116,7 +116,7 @@ let translate (Prog (t_table, dc_table, term) : program) =
         let ftv_hyps = List.map (fun (l, r) -> AtomSet.union (ftv l) (ftv r)) hyps in
         let full_set = List.fold_left AtomSet.union AtomSet.empty
             (ftv_term t :: ftv t1 :: ftv t2 :: (List.rev_append ftv_tenv ftv_hyps)) in
-        AtomSet.fold (fun h t -> h :: t) full_set []
+        AtomSet.elements full_set
 
       in
       (* build its type scheme and store it *)
